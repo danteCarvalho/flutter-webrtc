@@ -157,9 +157,23 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
             .createAudioDeviceModule();
 
     getUserMediaImpl.audioDeviceModule = (JavaAudioDeviceModule) audioDeviceModule;
+    
+     PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
+
+   
+    
+        options.disableNetworkMonitor = true;
+     
+     
+        options.disableEncryption = true;
+     
+    
+      
+      
+  
 
     mFactory = PeerConnectionFactory.builder()
-            .setOptions(new Options())
+            .setOptions(options)
             .setVideoEncoderFactory(new SimulcastVideoEncoderFactoryWrapper(eglContext, true, true))
             .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglContext))
             .setAudioDeviceModule(audioDeviceModule)
