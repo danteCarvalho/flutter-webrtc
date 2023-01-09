@@ -16,6 +16,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.media.AudioDeviceInfo;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
@@ -35,6 +36,7 @@ import android.view.WindowManager;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
+import com.cloudwebrtc.webrtc.audio.AudioSwitchManager;
 import com.cloudwebrtc.webrtc.record.AudioChannel;
 import com.cloudwebrtc.webrtc.record.AudioSamplesInterceptor;
 import com.cloudwebrtc.webrtc.record.MediaRecorderImpl;
@@ -98,7 +100,7 @@ class GetUserMediaImpl {
     static final String TAG = FlutterWebRTCPlugin.TAG;
 
     private final Map<String, VideoCapturerInfo> mVideoCapturers = new HashMap<>();
-
+    private final Map<String, SurfaceTextureHelper> mSurfaceTextureHelpers = new HashMap<>();
     private final StateProvider stateProvider;
     private final Context applicationContext;
 
@@ -324,6 +326,7 @@ class GetUserMediaImpl {
     }
 
     private AudioTrack getUserAudio(ConstraintsMap constraints) {
+        AudioSwitchManager.instance.start();
         MediaConstraints audioConstraints;
         if (constraints.getType("audio") == ObjectType.Boolean) {
             audioConstraints = new MediaConstraints();
@@ -459,7 +462,7 @@ class GetUserMediaImpl {
                         PeerConnectionFactory pcFactory = stateProvider.getPeerConnectionFactory();
                         VideoSource videoSource = pcFactory.createVideoSource(true);
 
-                        String threadName = Thread.currentThread().getName();
+                        String threadName = Thread.currentThread().getName() + "_texture_screen_thread";
                         SurfaceTextureHelper surfaceTextureHelper =
                                 SurfaceTextureHelper.create(threadName, EglUtils.getRootEglBaseContext());
                         videoCapturer.initialize(
@@ -499,7 +502,7 @@ class GetUserMediaImpl {
                             } else {
                                 mediaStream.addTrack((VideoTrack) track);
                             }
-                            stateProvider.getLocalTracks().put(id, track);
+                            stateProvider.putLocalTrack(id, track);
 
                             ConstraintsMap track_ = new ConstraintsMap();
                             String kind = track.kind();
@@ -521,7 +524,7 @@ class GetUserMediaImpl {
                         String streamId = mediaStream.getId();
 
                         Log.d(TAG, "MediaStream id: " + streamId);
-                        stateProvider.getLocalStreams().put(streamId, mediaStream);
+                        stateProvider.putLocalStream(streamId, mediaStream);
                         successResult.putString("streamId", streamId);
                         successResult.putArray("audioTracks", audioTracks.toArrayList());
                         successResult.putArray("videoTracks", videoTracks.toArrayList());
@@ -577,7 +580,7 @@ class GetUserMediaImpl {
             } else {
                 mediaStream.addTrack((VideoTrack) track);
             }
-            stateProvider.getLocalTracks().put(id, track);
+            stateProvider.putLocalTrack(id, track);
 
             ConstraintsMap track_ = new ConstraintsMap();
             String kind = track.kind();
@@ -599,7 +602,7 @@ class GetUserMediaImpl {
         String streamId = mediaStream.getId();
 
         Log.d(TAG, "MediaStream id: " + streamId);
-        stateProvider.getLocalStreams().put(streamId, mediaStream);
+        stateProvider.putLocalStream(streamId, mediaStream);
 
         successResult.putString("streamId", streamId);
         successResult.putArray("audioTracks", audioTracks.toArrayList());
@@ -679,7 +682,7 @@ class GetUserMediaImpl {
 
         PeerConnectionFactory pcFactory = stateProvider.getPeerConnectionFactory();
         VideoSource videoSource = pcFactory.createVideoSource(false);
-        String threadName = Thread.currentThread().getName();
+        String threadName = Thread.currentThread().getName() + "_texture_camera_thread";
         SurfaceTextureHelper surfaceTextureHelper =
                 SurfaceTextureHelper.create(threadName, EglUtils.getRootEglBaseContext());
         videoCapturer.initialize(
@@ -712,7 +715,7 @@ class GetUserMediaImpl {
 
         String trackId = stateProvider.getNextTrackUUID();
         mVideoCapturers.put(trackId, info);
-
+        mSurfaceTextureHelpers.put(trackId, surfaceTextureHelper);
         Log.d(TAG, "changeCaptureFormat: " + info.width + "x" + info.height + "@" + info.fps);
         videoSource.adaptOutputFormat(info.width, info.height, info.fps);
 
@@ -729,6 +732,12 @@ class GetUserMediaImpl {
             } finally {
                 info.capturer.dispose();
                 mVideoCapturers.remove(id);
+                SurfaceTextureHelper helper = mSurfaceTextureHelpers.get(id);
+                if (helper != null)  {
+                    helper.stopListening();
+                    helper.dispose();
+                    mSurfaceTextureHelpers.remove(id);
+                }
             }
         }
     }
@@ -1061,5 +1070,14 @@ class GetUserMediaImpl {
         int height;
         int fps;
         boolean isScreenCapture = false;
+    }
+
+    @RequiresApi(api = VERSION_CODES.M)
+    void setPreferredInputDevice(int i) {
+        android.media.AudioManager audioManager = ((android.media.AudioManager) applicationContext.getSystemService(Context.AUDIO_SERVICE));
+        final AudioDeviceInfo[] devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS);
+        if (devices.length > i) {
+            audioDeviceModule.setPreferredInputDevice(devices[i]);
+        }
     }
 }

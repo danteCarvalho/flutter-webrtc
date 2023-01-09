@@ -47,15 +47,15 @@ class RTCRtpSenderNative extends RTCRtpSender {
     try {
       final response = await WebRTC.invokeMethod('getStats', <String, dynamic>{
         'peerConnectionId': _peerConnectionId,
-        if (track != null) 'track': track!.id,
+        if (track != null) 'trackId': track!.id,
       });
       var stats = <StatsReport>[];
       if (response != null) {
         List<dynamic> reports = response['stats'];
-        reports.forEach((report) {
+        for (var report in reports) {
           stats.add(StatsReport(report['id'], report['type'],
               report['timestamp'], report['values']));
-        });
+        }
       }
       return stats;
     } on PlatformException catch (e) {

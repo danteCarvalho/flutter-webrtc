@@ -15,19 +15,21 @@ class RTCVideoView extends StatefulWidget {
     this.objectFit = RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
     this.mirror = false,
     this.filterQuality = FilterQuality.low,
+    this.placeholderBuilder,
   }) : super(key: key);
 
   final RTCVideoRenderer _renderer;
   final RTCVideoViewObjectFit objectFit;
   final bool mirror;
   final FilterQuality filterQuality;
+  final WidgetBuilder? placeholderBuilder;
 
   @override
-  _RTCVideoViewState createState() => _RTCVideoViewState();
+  RTCVideoViewState createState() => RTCVideoViewState();
 }
 
-class _RTCVideoViewState extends State<RTCVideoView> {
-  _RTCVideoViewState();
+class RTCVideoViewState extends State<RTCVideoView> {
+  RTCVideoViewState();
 
   RTCVideoRenderer get videoRenderer => widget._renderer;
 
@@ -83,7 +85,7 @@ class _RTCVideoViewState extends State<RTCVideoView> {
             height: constraints.maxHeight,
             child: widget._renderer.renderVideo
                 ? buildVideoElementView()
-                : Container(),
+                : widget.placeholderBuilder?.call(context) ?? Container(),
           ),
         );
       },

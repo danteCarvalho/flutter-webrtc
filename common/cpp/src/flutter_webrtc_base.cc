@@ -5,36 +5,45 @@
 
 namespace flutter_webrtc_plugin {
 
-FlutterWebRTCBase::FlutterWebRTCBase(BinaryMessenger *messenger,
-                                     TextureRegistrar *textures)
+const char* kEventChannelName = "FlutterWebRTC.Event";
+
+FlutterWebRTCBase::FlutterWebRTCBase(BinaryMessenger* messenger,
+                                     TextureRegistrar* textures)
     : messenger_(messenger), textures_(textures) {
   LibWebRTC::Initialize();
   factory_ = LibWebRTC::CreateRTCPeerConnectionFactory();
   audio_device_ = factory_->GetAudioDevice();
   video_device_ = factory_->GetVideoDevice();
   desktop_device_ = factory_->GetDesktopDevice();
+  event_channel_ = EventChannelProxy::Create(messenger_, kEventChannelName);
 }
 
 FlutterWebRTCBase::~FlutterWebRTCBase() {
   LibWebRTC::Terminate();
 }
 
+EventChannelProxy* FlutterWebRTCBase::event_channel() {
+  return event_channel_ ? event_channel_.get() : nullptr;
+}
+
 std::string FlutterWebRTCBase::GenerateUUID() {
   return uuidxx::uuid::Generate().ToString(false);
 }
 
-RTCPeerConnection *FlutterWebRTCBase::PeerConnectionForId(
-    const std::string &id) {
+RTCPeerConnection* FlutterWebRTCBase::PeerConnectionForId(
+    const std::string& id) {
   auto it = peerconnections_.find(id);
 
-  if (it != peerconnections_.end()) return (*it).second.get();
+  if (it != peerconnections_.end())
+    return (*it).second.get();
 
   return nullptr;
 }
 
-void FlutterWebRTCBase::RemovePeerConnectionForId(const std::string &id) {
+void FlutterWebRTCBase::RemovePeerConnectionForId(const std::string& id) {
   auto it = peerconnections_.find(id);
-  if (it != peerconnections_.end()) peerconnections_.erase(it);
+  if (it != peerconnections_.end())
+    peerconnections_.erase(it);
 }
 
 RTCMediaTrack* FlutterWebRTCBase ::MediaTrackForId(const std::string& id) {
@@ -44,9 +53,10 @@ RTCMediaTrack* FlutterWebRTCBase ::MediaTrackForId(const std::string& id) {
     return (*it).second.get();
 
   for (auto kv : peerconnection_observers_) {
-      auto pco = kv.second.get();
-      auto track = pco->MediaTrackForId(id);
-      if (track != nullptr) return track;
+    auto pco = kv.second.get();
+    auto track = pco->MediaTrackForId(id);
+    if (track != nullptr)
+      return track;
   }
 
   return nullptr;
@@ -76,34 +86,47 @@ void FlutterWebRTCBase::RemovePeerConnectionObserversForId(
 }
 
 scoped_refptr<RTCMediaStream> FlutterWebRTCBase::MediaStreamForId(
-    const std::string& id) {
+    const std::string& id,
+    std::string peerConnectionId /* = std::string()*/) {
   auto it = local_streams_.find(id);
   if (it != local_streams_.end()) {
     return (*it).second;
   }
 
+  if (!peerConnectionId.empty()) {
+    auto pco = peerconnection_observers_.find(peerConnectionId);
+    if (peerconnection_observers_.end() != pco) {
+      auto stream = pco->second->MediaStreamForId(id);
+      if (stream != nullptr) {
+        return stream;
+      }
+    }
+  }
+
   for (auto kv : peerconnection_observers_) {
     auto pco = kv.second.get();
     auto stream = pco->MediaStreamForId(id);
-    if (stream != nullptr) return stream;
+    if (stream != nullptr)
+      return stream;
   }
 
   return nullptr;
 }
 
-void FlutterWebRTCBase::RemoveStreamForId(const std::string &id) {
+void FlutterWebRTCBase::RemoveStreamForId(const std::string& id) {
   auto it = local_streams_.find(id);
-  if (it != local_streams_.end()) local_streams_.erase(it);
+  if (it != local_streams_.end())
+    local_streams_.erase(it);
 }
 
-bool FlutterWebRTCBase::ParseConstraints(const EncodableMap &constraints,
-                                         RTCConfiguration *configuration) {
+bool FlutterWebRTCBase::ParseConstraints(const EncodableMap& constraints,
+                                         RTCConfiguration* configuration) {
   memset(&configuration->ice_servers, 0, sizeof(configuration->ice_servers));
   return false;
 }
 
 void FlutterWebRTCBase::ParseConstraints(
-    const EncodableMap &src,
+    const EncodableMap& src,
     scoped_refptr<RTCMediaConstraints> mediaConstraints,
     ParseConstraintType type /*= kMandatory*/) {
   for (auto kv : src) {
@@ -138,7 +161,7 @@ void FlutterWebRTCBase::ParseConstraints(
 }
 
 scoped_refptr<RTCMediaConstraints> FlutterWebRTCBase::ParseMediaConstraints(
-    const EncodableMap &constraints) {
+    const EncodableMap& constraints) {
   scoped_refptr<RTCMediaConstraints> media_constraints =
       RTCMediaConstraints::Create();
 
@@ -159,7 +182,8 @@ scoped_refptr<RTCMediaConstraints> FlutterWebRTCBase::ParseMediaConstraints(
     } else if (TypeIs<EncodableList>(optional)) {
       const EncodableList list = GetValue<EncodableList>(optional);
       for (size_t i = 0; i < list.size(); i++) {
-        ParseConstraints(GetValue<EncodableMap>(list[i]), media_constraints, kOptional);
+        ParseConstraints(GetValue<EncodableMap>(list[i]), media_constraints,
+                         kOptional);
       }
     }
   } else {
@@ -169,20 +193,21 @@ scoped_refptr<RTCMediaConstraints> FlutterWebRTCBase::ParseMediaConstraints(
   return media_constraints;
 }
 
-bool FlutterWebRTCBase::CreateIceServers(const EncodableList &iceServersArray,
-                                         IceServer *ice_servers) {
+bool FlutterWebRTCBase::CreateIceServers(const EncodableList& iceServersArray,
+                                         IceServer* ice_servers) {
   size_t size = iceServersArray.size();
   for (size_t i = 0; i < size; i++) {
-    IceServer &ice_server = ice_servers[i];
+    IceServer& ice_server = ice_servers[i];
     EncodableMap iceServerMap = GetValue<EncodableMap>(iceServersArray[i]);
-    
-    if (iceServerMap.find(EncodableValue("username")) != iceServerMap.end()) {;
-          ice_server.username = GetValue<std::string>(
-              iceServerMap.find(EncodableValue("username"))->second);
+
+    if (iceServerMap.find(EncodableValue("username")) != iceServerMap.end()) {
+      ;
+      ice_server.username = GetValue<std::string>(
+          iceServerMap.find(EncodableValue("username"))->second);
     }
     if (iceServerMap.find(EncodableValue("credential")) != iceServerMap.end()) {
-          ice_server.password = GetValue<std::string>(
-              iceServerMap.find(EncodableValue("credential"))->second);
+      ice_server.password = GetValue<std::string>(
+          iceServerMap.find(EncodableValue("credential"))->second);
     }
 
     auto it = iceServerMap.find(EncodableValue("url"));
@@ -214,8 +239,8 @@ bool FlutterWebRTCBase::CreateIceServers(const EncodableList &iceServersArray,
   return size > 0;
 }
 
-bool FlutterWebRTCBase::ParseRTCConfiguration(const EncodableMap &map,
-                                              RTCConfiguration &conf) {
+bool FlutterWebRTCBase::ParseRTCConfiguration(const EncodableMap& map,
+                                              RTCConfiguration& conf) {
   auto it = map.find(EncodableValue("iceServers"));
   if (it != map.end()) {
     const EncodableList iceServersArray = GetValue<EncodableList>(it->second);
@@ -277,7 +302,6 @@ bool FlutterWebRTCBase::ParseRTCConfiguration(const EncodableMap &map,
   return true;
 }
 
-
 scoped_refptr<RTCMediaTrack> FlutterWebRTCBase::MediaTracksForId(
     const std::string& id) {
   auto it = local_tracks_.find(id);
@@ -285,12 +309,12 @@ scoped_refptr<RTCMediaTrack> FlutterWebRTCBase::MediaTracksForId(
     return (*it).second;
   }
 
-  for(auto it2 : peerconnection_observers_) {
-      auto pco = it2.second;
-      auto t = pco->MediaTrackForId(id);
-      if(t != nullptr) {
-        return t;
-      }
+  for (auto it2 : peerconnection_observers_) {
+    auto pco = it2.second;
+    auto t = pco->MediaTrackForId(id);
+    if (t != nullptr) {
+      return t;
+    }
   }
 
   return nullptr;
@@ -301,6 +325,5 @@ void FlutterWebRTCBase::RemoveTracksForId(const std::string& id) {
   if (it != local_tracks_.end())
     local_tracks_.erase(it);
 }
-
 
 }  // namespace flutter_webrtc_plugin

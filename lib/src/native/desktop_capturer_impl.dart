@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/src/native/event_channel.dart';
 
 import '../desktop_capturer.dart';
 import 'utils.dart';
@@ -15,12 +15,24 @@ class DesktopCapturerSourceNative extends DesktopCapturerSource {
         : SourceType.Screen;
     var source = DesktopCapturerSourceNative(map['id'], map['name'],
         ThumbnailSize.fromMap(map['thumbnailSize']), sourceType);
-    source.thumbnail = map['thumbnail'] as Uint8List;
+    if (map['thumbnail'] != null) {
+      source.thumbnail = map['thumbnail'] as Uint8List;
+    }
     return source;
   }
-  Function(String name)? onNameChanged;
-  Function()? onRemoved;
-  Function()? onThumbnailChanged;
+
+  //ignore: close_sinks
+  final StreamController<String> _onNameChanged =
+      StreamController.broadcast(sync: true);
+
+  @override
+  StreamController<String> get onNameChanged => _onNameChanged;
+
+  final StreamController<Uint8List> _onThumbnailChanged =
+      StreamController.broadcast(sync: true);
+
+  @override
+  StreamController<Uint8List> get onThumbnailChanged => _onThumbnailChanged;
 
   Uint8List? _thumbnail;
   String _name;
@@ -30,7 +42,6 @@ class DesktopCapturerSourceNative extends DesktopCapturerSource {
 
   set thumbnail(Uint8List? value) {
     _thumbnail = value;
-    onThumbnailChanged?.call();
   }
 
   set name(String name) {
@@ -55,31 +66,52 @@ class DesktopCapturerSourceNative extends DesktopCapturerSource {
 
 class DesktopCapturerNative extends DesktopCapturer {
   DesktopCapturerNative._internal() {
-    EventChannel('FlutterWebRTC/desktopSourcesEvent')
-        .receiveBroadcastStream()
-        .listen(eventListener, onError: errorListener);
+    FlutterWebRTCEventChannel.instance.handleEvents.stream.listen((data) {
+      var event = data.keys.first;
+      Map<dynamic, dynamic> map = data[event];
+      handleEvent(event, map);
+    });
   }
-
   static final DesktopCapturerNative instance =
       DesktopCapturerNative._internal();
 
+  @override
+  StreamController<DesktopCapturerSource> get onAdded => _onAdded;
+  final StreamController<DesktopCapturerSource> _onAdded =
+      StreamController.broadcast(sync: true);
+
+  @override
+  StreamController<DesktopCapturerSource> get onRemoved => _onRemoved;
+  final StreamController<DesktopCapturerSource> _onRemoved =
+      StreamController.broadcast(sync: true);
+
+  @override
+  StreamController<DesktopCapturerSource> get onNameChanged => _onNameChanged;
+  final StreamController<DesktopCapturerSource> _onNameChanged =
+      StreamController.broadcast(sync: true);
+
+  @override
+  StreamController<DesktopCapturerSource> get onThumbnailChanged =>
+      _onThumbnailChanged;
+  final StreamController<DesktopCapturerSource> _onThumbnailChanged =
+      StreamController.broadcast(sync: true);
+
   final Map<String, DesktopCapturerSourceNative> _sources = {};
 
-  void eventListener(dynamic event) async {
-    final Map<dynamic, dynamic> map = event;
-    switch (map['event']) {
+  void handleEvent(String event, Map<dynamic, dynamic> map) async {
+    switch (event) {
       case 'desktopSourceAdded':
         final source = DesktopCapturerSourceNative.fromMap(map);
         if (_sources[source.id] == null) {
           _sources[source.id] = source;
-          onAdded.add(source);
+          _onAdded.add(source);
         }
         break;
       case 'desktopSourceRemoved':
         final source = _sources[map['id'] as String];
         if (source != null) {
           _sources.remove((source) => source.id == map['id']);
-          onRemoved.add(source);
+          _onRemoved.add(source);
         }
         break;
       case 'desktopSourceThumbnailChanged':
@@ -87,7 +119,8 @@ class DesktopCapturerNative extends DesktopCapturer {
         if (source != null) {
           try {
             source.thumbnail = map['thumbnail'] as Uint8List;
-            onThumbnailChanged.add(source);
+            _onThumbnailChanged.add(source);
+            source.onThumbnailChanged.add(source.thumbnail!);
           } catch (e) {
             print('desktopSourceThumbnailChanged: $e');
           }
@@ -97,7 +130,8 @@ class DesktopCapturerNative extends DesktopCapturer {
         final source = _sources[map['id'] as String];
         if (source != null) {
           source.name = map['name'];
-          onNameChanged.add(source);
+          _onNameChanged.add(source);
+          source.onNameChanged.add(source.name);
         }
         break;
     }
@@ -123,17 +157,7 @@ class DesktopCapturerNative extends DesktopCapturer {
       throw Exception('getDesktopSources return null, something wrong');
     }
     for (var source in response['sources']) {
-      var sourceType = (source['type'] as String) == 'window'
-          ? SourceType.Window
-          : SourceType.Screen;
-      var desktopSource = DesktopCapturerSourceNative(
-          source['id'],
-          source['name'],
-          ThumbnailSize.fromMap(source['thumbnailSize']),
-          sourceType);
-      if (source['thumbnail'] != null) {
-        desktopSource.thumbnail = source['thumbnail'] as Uint8List;
-      }
+      var desktopSource = DesktopCapturerSourceNative.fromMap(source);
       _sources[desktopSource.id] = desktopSource;
     }
     return _sources.values.toList();

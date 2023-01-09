@@ -45,17 +45,22 @@ abstract class DesktopCapturerSource {
 
   /// The type of the source.
   SourceType get type;
+
+  StreamController<String> get onNameChanged => throw UnimplementedError();
+
+  StreamController<Uint8List> get onThumbnailChanged =>
+      throw UnimplementedError();
 }
 
 abstract class DesktopCapturer {
-  final StreamController<DesktopCapturerSource> onAdded =
-      StreamController.broadcast();
-  final StreamController<DesktopCapturerSource> onRemoved =
-      StreamController.broadcast();
-  final StreamController<DesktopCapturerSource> onNameChanged =
-      StreamController.broadcast();
-  final StreamController<DesktopCapturerSource> onThumbnailChanged =
-      StreamController.broadcast();
+  StreamController<DesktopCapturerSource> get onAdded =>
+      throw UnimplementedError();
+  StreamController<DesktopCapturerSource> get onRemoved =>
+      throw UnimplementedError();
+  StreamController<DesktopCapturerSource> get onNameChanged =>
+      throw UnimplementedError();
+  StreamController<DesktopCapturerSource> get onThumbnailChanged =>
+      throw UnimplementedError();
 
   ///Get the screen source of the specified types
   Future<List<DesktopCapturerSource>> getSources(
